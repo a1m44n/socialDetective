@@ -9,7 +9,7 @@ from .serializers import SocialMediaPostSerializer
 from django.shortcuts import render
 
 def home(request):
-    return render(request, "home.html")
+    return render(request, 'core/home.html')
 class AnalyzeTextView(APIView):
     def post(self, request):
         text = request.data.get('text', '')
