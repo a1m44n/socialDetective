@@ -7,25 +7,37 @@ from rest_framework.generics import ListCreateAPIView
 from .models import SocialMediaPost
 from .serializers import SocialMediaPostSerializer
 from django.shortcuts import render
+from django.http import JsonResponse
+from django.views import View
 
+# Load sentiment analysis pipeline
+sentiment_pipeline = pipeline("sentiment-analysis")
+
+# Define `AnalyzeTextView`
+class AnalyzeTextView(View):
+    def post(self, request, *args, **kwargs):
+        text = request.POST.get("text", "")
+        if text:
+            result = sentiment_pipeline(text)
+            return JsonResponse(result, safe=False)
+        return JsonResponse({"error": "No text provided"}, status=400)
+
+# Define `SocialMediaPostListCreateView`
+class SocialMediaPostListCreateView(View):
+    def get(self, request, *args, **kwargs):
+        return JsonResponse({"message": "Fetching social media posts..."})
+
+    def post(self, request, *args, **kwargs):
+        return JsonResponse({"message": "Creating a social media post..."})
+
+# Define `home`
 def home(request):
-    return render(request, 'core/home.html')
-class AnalyzeTextView(APIView):
-    def post(self, request):
-        text = request.data.get('text', '')
+    return render(request, "core/home.html")
 
-        if not text:
-            return Response({'error': 'No text provided'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Load NLP model (Hugging Face sentiment analysis)
-        nlp_pipeline = pipeline("sentiment-analysis")
-
-        # Perform analysis
-        result = nlp_pipeline(text)[0]
-
-        return Response({'text': text, 'analysis': result}, status=status.HTTP_200_OK)
-
-# This class should NOT be inside AnalyzeTextView
-class SocialMediaPostListCreateView(ListCreateAPIView):
-    queryset = SocialMediaPost.objects.all()
-    serializer_class = SocialMediaPostSerializer
+# Define `analyze_sentiment`
+def analyze_sentiment(request):
+    text = request.GET.get("text", "")
+    if text:
+        result = sentiment_pipeline(text)
+        return JsonResponse(result, safe=False)
+    return JsonResponse({"error": "No text provided"}, status=400)
