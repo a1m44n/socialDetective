@@ -32,11 +32,10 @@ export default function SearchPage() {
     setError(null);
     setResults([]);
     try {
-      const response = await fetch('/api/search/', {
+      const response = await fetch('http://localhost:8000/api/search/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify({ query, platform }),
       });

@@ -4,7 +4,7 @@ from rest_framework import status
 import torch
 from transformers import pipeline
 from rest_framework.generics import ListCreateAPIView
-from .models import SocialMediaPost, Post
+from .models import Post, SocialMediaPost
 from .serializers import SocialMediaPostSerializer, PostSerializer
 from django.shortcuts import render
 from django.http import JsonResponse
@@ -21,19 +21,32 @@ from django.conf import settings
 import tweepy
 import requests
 from datetime import datetime
+import pandas as pd
+from django.core.cache import cache
+import os
 
+# Load dataset once at startup
+DATASET_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'training.1600000.processed.noemoticon.csv')
 
+try:
+    df = pd.read_csv(DATASET_PATH, encoding='latin-1', names=['target', 'id', 'date', 'flag', 'user', 'text'])
+    print(f"Successfully loaded dataset from {DATASET_PATH}")
+except FileNotFoundError:
+    print(f"Warning: Dataset not found at {DATASET_PATH}")
+    print("Please download the dataset from: http://cs.stanford.edu/people/alecmgo/trainingandtestdata.zip")
+    print("Extract it and place training.1600000.processed.noemoticon.csv in the data/ folder")
+    # Create an empty DataFrame with the same structure
+    df = pd.DataFrame(columns=['target', 'id', 'date', 'flag', 'user', 'text'])
 
-
-# Load sentiment analysis pipeline
-sentiment_pipeline = pipeline("sentiment-analysis")
+# Load sentiment model
+sentiment_analyzer = pipeline("sentiment-analysis")
 
 # Define `AnalyzeTextView`
 class AnalyzeTextView(View):
     def post(self, request, *args, **kwargs):
         text = request.POST.get("text", "")
         if text:
-            result = sentiment_pipeline(text)
+            result = sentiment_analyzer(text)
             return JsonResponse(result, safe=False)
         return JsonResponse({"error": "No text provided"}, status=400)
 
@@ -65,7 +78,7 @@ def analyze_sentiment(request):
     if request.method == "POST":
         text = request.POST.get("text", "")
         if text:
-            result = sentiment_pipeline(text)
+            result = sentiment_analyzer(text)
             return JsonResponse(result, safe=False)
         return JsonResponse({"error": "No text provided"}, status=400)
     return JsonResponse({"error": "Invalid request"}, status=400)
@@ -126,12 +139,6 @@ except Exception as e:
 
 @api_view(['GET'])
 def search_twitter(request):
-    if not twitter_api:
-        return Response(
-            {"error": "Twitter API credentials not configured"},
-            status=status.HTTP_503_SERVICE_UNAVAILABLE
-        )
-    
     query = request.GET.get('q', '')
     if not query:
         return Response(
@@ -140,12 +147,29 @@ def search_twitter(request):
         )
     
     try:
-        tweets = twitter_api.search_tweets(q=query, count=10)
-        results = [{
-            'text': tweet.text,
-            'created_at': tweet.created_at,
-            'user': tweet.user.screen_name
-        } for tweet in tweets]
+        # Try to get from cache first
+        cache_key = f"search_{query}"
+        results = cache.get(cache_key)
+        
+        if not results:
+            # Filter dataset for keyword
+            results_df = df[df['text'].str.contains(query, case=False, na=False)].head(10)
+            
+            # Add sentiment analysis
+            results = []
+            for _, row in results_df.iterrows():
+                sentiment = sentiment_analyzer(row['text'])[0]
+                results.append({
+                    'text': row['text'],
+                    'created_at': row['date'],
+                    'user': row['user'],
+                    'sentiment': sentiment['label'],
+                    'score': sentiment['score']
+                })
+            
+            # Cache the results
+            cache.set(cache_key, results, 3600)  # Cache for 1 hour
+            
         return Response(results)
     except Exception as e:
         return Response(
@@ -153,71 +177,46 @@ def search_twitter(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
+@csrf_exempt
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
 def search_social_media(request):
     data = request.data
     platform = data.get('platform', 'twitter')
-    username = data.get('username')
-    hashtags = data.get('hashtags', '').split(',')
-    keywords = data.get('keywords', '').split(',')
-    start_date = data.get('start_date')
-    end_date = data.get('end_date')
+    query = data.get('query', '')
 
     results = []
+
     if platform == 'twitter':
         try:
-            # Search tweets
-            query = []
-            if username:
-                query.append(f'from:{username}')
-            if hashtags:
-                query.extend([f'#{tag.strip()}' for tag in hashtags if tag.strip()])
-            if keywords:
-                query.extend([f'"{keyword.strip()}"' for keyword in keywords if keyword.strip()])
+            # Try to get from cache first
+            cache_key = f"social_search_{query}"
+            results = cache.get(cache_key)
             
-            search_query = ' '.join(query)
-            tweets = twitter_api.search_tweets(
-                q=search_query,
-                count=100,
-                tweet_mode='extended'
-            )
-            
-            results = [{
-                'id': tweet.id_str,
-                'text': tweet.full_text,
-                'created_at': tweet.created_at.isoformat(),
-                'user': {
-                    'screen_name': tweet.user.screen_name,
-                    'name': tweet.user.name
-                },
-                'platform': 'twitter'
-            } for tweet in tweets]
-            
+            if not results:
+                # Filter dataset for keyword
+                results_df = df[df['text'].str.contains(query, case=False, na=False)].head(10)
+                
+                # Add sentiment analysis
+                results = []
+                for _, row in results_df.iterrows():
+                    sentiment = sentiment_analyzer(row['text'])[0]
+                    results.append({
+                        'platform': 'Twitter',
+                        'username': row['user'],
+                        'text': row['text'],
+                        'timestamp': row['date'],
+                        'sentiment': sentiment['label'],
+                        'score': sentiment['score']
+                    })
+                
+                # Cache the results
+                cache.set(cache_key, results, 3600)  # Cache for 1 hour
+                
         except Exception as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    elif platform == 'instagram':
-        # Instagram API implementation will go here
-        pass
+            print("Error in search_social_media:", e)
+            return Response({'error': str(e)}, status=500)
 
-    return Response({
-        'results': results,
-        'metadata': {
-            'total_results': len(results),
-            'platform': platform,
-            'query': {
-                'username': username,
-                'hashtags': hashtags,
-                'keywords': keywords,
-                'start_date': start_date,
-                'end_date': end_date
-            }
-        }
-    })
+    return Response({'results': results})
 
 class SocialSearchView(APIView):
     permission_classes = [IsAuthenticated]
@@ -236,6 +235,10 @@ class SocialSearchView(APIView):
 
         serializer = PostSerializer(posts[:50], many=True)  # Limit results
         return Response({'results': serializer.data}, status=status.HTTP_200_OK)
+
+@csrf_exempt
+def test_api(request):
+    return JsonResponse({"message": "It works!"})
 
         
         

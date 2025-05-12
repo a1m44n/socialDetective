@@ -33,10 +33,12 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 # Twitter API Credentials
-TWITTER_API_KEY = os.getenv('TWITTER_API_KEY')
-TWITTER_API_SECRET = os.getenv('TWITTER_API_SECRET')
-TWITTER_ACCESS_TOKEN = os.getenv('TWITTER_ACCESS_TOKEN')
-TWITTER_ACCESS_TOKEN_SECRET = os.getenv('TWITTER_ACCESS_TOKEN_SECRET')
+TWITTER_API_KEY = 'qfAGTVbOnMPWYLFCfDIA7l8eb'
+TWITTER_API_SECRET = 'H62G4nFdoIPXMwF5pztP31k8y44Q67R5jyCLip3XX7TfeOdQeS'
+TWITTER_ACCESS_TOKEN = '1919094360815386624-jir73JNQJI28L49GoJUFIYMYik6osf'
+TWITTER_ACCESS_TOKEN_SECRET = 'HT1Ti5yyUdu19uTVG5KQPMiDJpzbSfTO5vs8sdB7SmkUo'
+TWITTER_BEARER_TOKEN = 'AAAAAAAAAAAAAAAAAAAAAHsr1AEAAAAAzXiTAgjpD55ai3T0WHCuzVcdjCg%3DZHFZ8qFCBW7BeJfO7Qk6DJynNcqCuGmIyESrzxlxp08fy9tnQE'
+
 
 
 # Application definition
@@ -59,7 +61,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
+    # 'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -152,4 +154,8 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
 }
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+]
 
