@@ -1,22 +1,23 @@
+from unittest import result
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 import torch
 from transformers import pipeline
 from rest_framework.generics import ListCreateAPIView
-from .models import Post, SocialMediaPost
+from .models import Post, SocialMediaPost, AcquiredTweet
 from .serializers import SocialMediaPostSerializer, PostSerializer
 from django.shortcuts import render
 from django.http import JsonResponse
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_http_methods
 import json
 import re
 from django.contrib.auth import authenticate
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django.conf import settings
 import tweepy
 import requests
@@ -24,6 +25,7 @@ from datetime import datetime
 import pandas as pd
 from django.core.cache import cache
 import os
+import hashlib
 
 # Load dataset once at startup
 DATASET_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'training.1600000.processed.noemoticon.csv')
@@ -38,8 +40,29 @@ except FileNotFoundError:
     # Create an empty DataFrame with the same structure
     df = pd.DataFrame(columns=['target', 'id', 'date', 'flag', 'user', 'text'])
 
-# Load sentiment model
-sentiment_analyzer = pipeline("sentiment-analysis")
+# Use the Twitter-specific model
+sentiment_analyzer = pipeline(
+    "sentiment-analysis",
+    model="cardiffnlp/twitter-roberta-base-sentiment-latest",
+    tokenizer="cardiffnlp/twitter-roberta-base-sentiment-latest"
+)
+
+# Map model output to human-readable labels
+label_map = {
+    "LABEL_0": "NEGATIVE",
+    "LABEL_1": "NEUTRAL",
+    "LABEL_2": "POSITIVE"
+}
+
+# Twitter API credentials
+TWITTER_BEARER_TOKEN = os.getenv('TWITTER_BEARER_TOKEN')
+
+# Initialize Twitter client v2
+twitter_client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
+
+def generate_hash(data):
+    """Generate SHA256 hash of the data"""
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode('utf-8')).hexdigest()
 
 # Define `AnalyzeTextView`
 class AnalyzeTextView(View):
@@ -140,24 +163,22 @@ except Exception as e:
 @api_view(['GET'])
 def search_twitter(request):
     query = request.GET.get('q', '')
+    page = int(request.GET.get('page', 1))
+    page_size = int(request.GET.get('page_size', 10))
     if not query:
-        return Response(
-            {"error": "Search query is required"},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    
+        return Response({"error": "Search query is required"}, status=status.HTTP_400_BAD_REQUEST)
     try:
         # Try to get from cache first
-        cache_key = f"search_{query}"
+        cache_key = f"search_{query}_page_{page}"
         results = cache.get(cache_key)
         
         if not results:
-            # Filter dataset for keyword
-            results_df = df[df['text'].str.contains(query, case=False, na=False)].head(10)
-            
-            # Add sentiment analysis
+            results_df = df[df['text'].str.contains(query, case=False, na=False)]
+            start = (page - 1) * page_size
+            end = start + page_size
+            paged_df = results_df.iloc[start:end]
             results = []
-            for _, row in results_df.iterrows():
+            for _, row in paged_df.iterrows():
                 sentiment = sentiment_analyzer(row['text'])[0]
                 results.append({
                     'text': row['text'],
@@ -170,12 +191,14 @@ def search_twitter(request):
             # Cache the results
             cache.set(cache_key, results, 3600)  # Cache for 1 hour
             
-        return Response(results)
+        return Response({
+            'results': results,
+            'total': len(results_df),
+            'page': page,
+            'page_size': page_size
+        })
     except Exception as e:
-        return Response(
-            {"error": str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @csrf_exempt
 @api_view(['POST'])
@@ -188,30 +211,33 @@ def search_social_media(request):
 
     if platform == 'twitter':
         try:
-            # Try to get from cache first
-            cache_key = f"social_search_{query}"
-            results = cache.get(cache_key)
-            
-            if not results:
-                # Filter dataset for keyword
-                results_df = df[df['text'].str.contains(query, case=False, na=False)].head(10)
-                
-                # Add sentiment analysis
-                results = []
-                for _, row in results_df.iterrows():
-                    sentiment = sentiment_analyzer(row['text'])[0]
-                    results.append({
-                        'platform': 'Twitter',
-                        'username': row['user'],
-                        'text': row['text'],
-                        'timestamp': row['date'],
-                        'sentiment': sentiment['label'],
-                        'score': sentiment['score']
-                    })
-                
-                # Cache the results
-                cache.set(cache_key, results, 3600)  # Cache for 1 hour
-                
+            # Use local dataset instead of Twitter API
+            results_df = df[df['text'].str.contains(query, case=False, na=False)].head(10)
+            results = []
+            for _, row in results_df.iterrows():
+                post_data = {
+                    'platform': 'Twitter',
+                    'username': row['user'],
+                    'text': row['text'],
+                    'timestamp': row['date'],
+                }
+                post_hash = generate_hash(post_data)
+                AcquiredTweet.objects.create(
+                    tweet_id=row.get('id', ''),  # or another unique identifier
+                    username=row['user'],
+                    text=row['text'],
+                    raw_data=post_data,
+                    hash=post_hash,
+                    created_at=row['date'],
+                    read_only=True  # Set to True on acquisition
+                )
+                results.append({
+                    'platform': 'Twitter',
+                    'username': row['user'],
+                    'text': row['text'],
+                    'timestamp': row['date'],
+                    'sentiment': None  # Or add sentiment analysis if you want
+                })
         except Exception as e:
             print("Error in search_social_media:", e)
             return Response({'error': str(e)}, status=500)
@@ -219,8 +245,6 @@ def search_social_media(request):
     return Response({'results': results})
 
 class SocialSearchView(APIView):
-    permission_classes = [IsAuthenticated]
-
     def post(self, request):
         query = request.data.get('query', '')
         platform = request.data.get('platform', '').lower()
@@ -239,6 +263,47 @@ class SocialSearchView(APIView):
 @csrf_exempt
 def test_api(request):
     return JsonResponse({"message": "It works!"})
+
+@require_http_methods(["POST"])
+@permission_classes([IsAdminUser])
+def update_acquired_tweet(request, tweet_id):
+    tweet = AcquiredTweet.objects.get(tweet_id=tweet_id)
+    if tweet.read_only:
+        return JsonResponse({'error': 'This record is write-protected.'}, status=403)
+    # ...proceed with update...
+
+@require_http_methods(["DELETE"])
+@permission_classes([IsAdminUser])
+def delete_acquired_tweet(request, tweet_id):
+    tweet = AcquiredTweet.objects.get(tweet_id=tweet_id)
+    if tweet.read_only:
+        return JsonResponse({'error': 'This record is write-protected.'}, status=403)
+    tweet.delete()
+    return JsonResponse({'success': True})
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def lock_acquired_tweet(request, tweet_id):
+    tweet = AcquiredTweet.objects.get(tweet_id=tweet_id)
+    tweet.read_only = True
+    tweet.save()
+    return Response({'success': True, 'read_only': tweet.read_only})
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def unlock_acquired_tweet(request, tweet_id):
+    tweet = AcquiredTweet.objects.get(tweet_id=tweet_id)
+    tweet.read_only = False
+    tweet.save()
+    return Response({'success': True, 'read_only': tweet.read_only})
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def search_tweets(request):
+    # Add your search logic here
+    query = request.data.get('query', '')
+    # ... your search code ...
+    return Response({'results': result})
 
         
         

@@ -4,6 +4,7 @@ from .views import home, analyze_sentiment
 from .views import normalize_text
 from . import views
 from core.views import search_social_media
+from .views import lock_acquired_tweet, unlock_acquired_tweet
 
 
 
@@ -15,4 +16,6 @@ urlpatterns = [
     path('api/normalize/', normalize_text, name='normalize_text'),
     path('test/', views.test_api, name='test_api'),
     path('search/', search_social_media, name='search_social_media'),
+    path('api/acquired/lock/<str:tweet_id>/', lock_acquired_tweet, name='lock-acquired-tweet'),
+    path('api/acquired/unlock/<str:tweet_id>/', unlock_acquired_tweet, name='unlock-acquired-tweet'),
 ]

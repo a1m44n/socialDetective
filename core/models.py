@@ -19,4 +19,21 @@ class Post(models.Model):
     def __str__(self):
         return f"{self.platform} post by {self.username} at {self.timestamp}"
 
+class AcquiredTweet(models.Model):
+    tweet_id = models.CharField(max_length=255, unique=True)
+    username = models.CharField(max_length=255)
+    text = models.TextField()
+    raw_data = models.JSONField()
+    hash = models.CharField(max_length=64)  # SHA256 hash
+    sentiment = models.JSONField(null=True)
+    created_at = models.DateTimeField()
+    acquired_at = models.DateTimeField(auto_now_add=True)
+    read_only = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Tweet {self.tweet_id} by {self.username}"
+
+    class Meta:
+        ordering = ['-created_at']
+
 

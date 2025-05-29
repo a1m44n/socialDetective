@@ -10,6 +10,7 @@ import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import CircularProgress from '@mui/material/CircularProgress';
 import Alert from '@mui/material/Alert';
+import Chip from '@mui/material/Chip';
 
 export default function SearchPage() {
   const [query, setQuery] = useState('');
@@ -120,9 +121,29 @@ export default function SearchPage() {
                 </Typography>
                 {result.sentiment && (
                   <Box sx={{ mt: 1 }}>
-                    <Typography variant="caption" color="text.secondary">
-                      Sentiment: <b>{result.sentiment.label}</b> ({result.sentiment.score})
-                    </Typography>
+                    <Chip
+                      icon={
+                        result.sentiment?.label?.toLowerCase() === 'positive'
+                          ? <span role="img" aria-label="positive">😊</span>
+                          : result.sentiment?.label?.toLowerCase() === 'negative'
+                          ? <span role="img" aria-label="negative">😞</span>
+                          : <span role="img" aria-label="neutral">😐</span>
+                      }
+                      label={
+                        result.sentiment?.label
+                          ? `Sentiment: ${result.sentiment.label} (${result.sentiment.score ? (result.sentiment.score * 100).toFixed(1) : 'N/A'}%)`
+                          : 'Sentiment: N/A'
+                      }
+                      color={
+                        result.sentiment?.label?.toLowerCase() === 'positive'
+                          ? 'success'
+                          : result.sentiment?.label?.toLowerCase() === 'negative'
+                          ? 'error'
+                          : 'default'
+                      }
+                      variant="outlined"
+                      size="small"
+                    />
                   </Box>
                 )}
               </Box>

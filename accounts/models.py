@@ -21,10 +21,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     ROLE_CHOICES = (
         ('admin', 'Admin'),
         ('investigator', 'Investigator'),
+        ('viewer', 'Viewer'),
     )
     
     email = models.EmailField(unique=True)
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='investigator')
+    role = models.CharField(max_length=32, choices=ROLE_CHOICES, default='viewer')
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
