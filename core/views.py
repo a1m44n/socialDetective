@@ -22,23 +22,11 @@ from django.conf import settings
 import tweepy
 import requests
 from datetime import datetime
-import pandas as pd
 from django.core.cache import cache
 import os
 import hashlib
 
-# Load dataset once at startup
-DATASET_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'training.1600000.processed.noemoticon.csv')
 
-try:
-    df = pd.read_csv(DATASET_PATH, encoding='latin-1', names=['target', 'id', 'date', 'flag', 'user', 'text'])
-    print(f"Successfully loaded dataset from {DATASET_PATH}")
-except FileNotFoundError:
-    print(f"Warning: Dataset not found at {DATASET_PATH}")
-    print("Please download the dataset from: http://cs.stanford.edu/people/alecmgo/trainingandtestdata.zip")
-    print("Extract it and place training.1600000.processed.noemoticon.csv in the data/ folder")
-    # Create an empty DataFrame with the same structure
-    df = pd.DataFrame(columns=['target', 'id', 'date', 'flag', 'user', 'text'])
 
 # Use the Twitter-specific model
 sentiment_analyzer = pipeline(
@@ -165,38 +153,37 @@ def search_twitter(request):
     query = request.GET.get('q', '')
     page = int(request.GET.get('page', 1))
     page_size = int(request.GET.get('page_size', 10))
+    
     if not query:
         return Response({"error": "Search query is required"}, status=status.HTTP_400_BAD_REQUEST)
+    
     try:
-        # Try to get from cache first
-        cache_key = f"search_{query}_page_{page}"
-        results = cache.get(cache_key)
+        # Use Twitter API v2
+        tweets = twitter_client.search_recent_tweets(
+            query=query,
+            max_results=page_size,
+            pagination_token=None if page == 1 else request.GET.get('next_token')
+        )
         
-        if not results:
-            results_df = df[df['text'].str.contains(query, case=False, na=False)]
-            start = (page - 1) * page_size
-            end = start + page_size
-            paged_df = results_df.iloc[start:end]
-            results = []
-            for _, row in paged_df.iterrows():
-                sentiment = sentiment_analyzer(row['text'])[0]
-                results.append({
-                    'text': row['text'],
-                    'created_at': row['date'],
-                    'user': row['user'],
-                    'sentiment': sentiment['label'],
-                    'score': sentiment['score']
-                })
-            
-            # Cache the results
-            cache.set(cache_key, results, 3600)  # Cache for 1 hour
+        results = []
+        for tweet in tweets.data:
+            # Analyze sentiment for each tweet
+            sentiment = sentiment_analyzer(tweet.text)[0]
+            results.append({
+                'text': tweet.text,
+                'created_at': tweet.created_at,
+                'id': tweet.id,
+                'sentiment': label_map[sentiment['label']],
+                'score': sentiment['score']
+            })
             
         return Response({
             'results': results,
-            'total': len(results_df),
+            'meta': tweets.meta,
             'page': page,
             'page_size': page_size
         })
+        
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -207,37 +194,46 @@ def search_social_media(request):
     platform = data.get('platform', 'twitter')
     query = data.get('query', '')
 
+    if not query:
+        return Response({'error': 'Query is required'}, status=400)
+
     results = []
 
     if platform == 'twitter':
         try:
-            # Use local dataset instead of Twitter API
-            results_df = df[df['text'].str.contains(query, case=False, na=False)].head(10)
-            results = []
-            for _, row in results_df.iterrows():
+            tweets = twitter_client.search_recent_tweets(
+                query=query,
+                max_results=10
+            )
+            
+            for tweet in tweets.data:
                 post_data = {
                     'platform': 'Twitter',
-                    'username': row['user'],
-                    'text': row['text'],
-                    'timestamp': row['date'],
+                    'username': tweet.author_id,  # You might want to fetch user details separately
+                    'text': tweet.text,
+                    'timestamp': tweet.created_at,
                 }
                 post_hash = generate_hash(post_data)
+                
+                # Save to database
                 AcquiredTweet.objects.create(
-                    tweet_id=row.get('id', ''),  # or another unique identifier
-                    username=row['user'],
-                    text=row['text'],
+                    tweet_id=tweet.id,
+                    username=tweet.author_id,
+                    text=tweet.text,
                     raw_data=post_data,
                     hash=post_hash,
-                    created_at=row['date'],
-                    read_only=True  # Set to True on acquisition
+                    created_at=tweet.created_at,
+                    read_only=True
                 )
+                
                 results.append({
                     'platform': 'Twitter',
-                    'username': row['user'],
-                    'text': row['text'],
-                    'timestamp': row['date'],
-                    'sentiment': None  # Or add sentiment analysis if you want
+                    'username': tweet.author_id,
+                    'text': tweet.text,
+                    'timestamp': tweet.created_at,
+                    'sentiment': sentiment_analyzer(tweet.text)[0]
                 })
+                
         except Exception as e:
             print("Error in search_social_media:", e)
             return Response({'error': str(e)}, status=500)
@@ -300,13 +296,34 @@ def unlock_acquired_tweet(request, tweet_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def search_tweets(request):
-    # Add your search logic here
     query = request.data.get('query', '')
-    # ... your search code ...
-    return Response({'results': result})
+    if not query:
+        return Response({'error': 'Query is required'}, status=400)
+        
+    try:
+        tweets = twitter_client.search_recent_tweets(
+            query=query,
+            max_results=100
+        )
+        
+        results = []
+        for tweet in tweets.data:
+            sentiment = sentiment_analyzer(tweet.text)[0]
+            results.append({
+                'id': tweet.id,
+                'text': tweet.text,
+                'created_at': tweet.created_at,
+                'sentiment': label_map[sentiment['label']],
+                'score': sentiment['score']
+            })
+            
+        return Response({'results': results})
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
 
-        
-        
 
-        
-        
+
+
+
+
