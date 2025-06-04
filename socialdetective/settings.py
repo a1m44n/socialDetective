@@ -33,11 +33,11 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 # Twitter API Credentials
-TWITTER_API_KEY = os.getenv('qfAGTVbOnMPWYLFCfDIA7l8eb')
-TWITTER_API_SECRET = os.getenv('H62G4nFdoIPXMwF5pztP31k8y44Q67R5jyCLip3XX7TfeOdQeS')
-TWITTER_ACCESS_TOKEN = '1919094360815386624-jir73JNQJI28L49GoJUFIYMYik6osf'
-TWITTER_ACCESS_TOKEN_SECRET = os.getenv('HT1Ti5yyUdu19uTVG5KQPMiDJpzbSfTO5vs8sdB7SmkUo')
-TWITTER_BEARER_TOKEN = os.getenv('AAAAAAAAAAAAAAAAAAAAAHsr1AEAAAAAzXiTAgjpD55ai3T0WHCuzVcdjCg%3DZHFZ8qFCBW7BeJfO7Qk6DJynNcqCuGmIyESrzxlxp08fy9tnQE')
+TWITTER_API_KEY = os.getenv('TWITTER_API_KEY')
+TWITTER_API_SECRET = os.getenv('TWITTER_API_SECRET')
+TWITTER_ACCESS_TOKEN = os.getenv('TWITTER_ACCESS_TOKEN')
+TWITTER_ACCESS_TOKEN_SECRET = os.getenv('TWITTER_ACCESS_TOKEN_SECRET')
+TWITTER_BEARER_TOKEN = os.getenv('TWITTER_BEARER_TOKEN')
 
 
 
@@ -97,13 +97,13 @@ AUTH_USER_MODEL = 'accounts.User'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 DATABASES = {
-     'default': {
+    'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'socialdetective',
-        'USER': 'postgres',
-        'PASSWORD': 'Sarah02116;',
-        'HOST': 'localhost',  
-        'PORT': '5432',  
+        'NAME': os.getenv('DB_NAME', 'socialdetective'),
+        'USER': os.getenv('DB_USER', 'postgres'),
+        'PASSWORD': os.getenv('DB_PASSWORD', 'Sarah02116;'),
+        'HOST': os.getenv('DB_HOST', 'localhost'),
+        'PORT': os.getenv('DB_PORT', '5432'),
     }
 }
 
@@ -163,4 +163,29 @@ REST_FRAMEWORK = {
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
 ]
+
+# Cache settings
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6379/1",
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "SOCKET_CONNECT_TIMEOUT": 5,
+            "SOCKET_TIMEOUT": 5,
+            "RETRY_ON_TIMEOUT": True,
+            "MAX_CONNECTIONS": 1000,
+            "CONNECTION_POOL_KWARGS": {"max_connections": 100}
+        },
+        "KEY_PREFIX": "socialdetective"
+    }
+}
+
+# Cache timeout settings
+CACHE_TTL = 300  # 5 minutes
+CACHE_TTL_LONG = 3600  # 1 hour
+
+# Session settings (optional, but recommended)
+SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+SESSION_CACHE_ALIAS = "default"
 

@@ -23,6 +23,13 @@ from django.core.cache import cache
 import os
 import hashlib
 from textblob import TextBlob
+from .twitter_utils import (
+    fetch_tweets_with_retry,
+    get_cached_tweets,
+    set_cached_tweets,
+    format_tweet_data,
+    rate_limit
+)
 
 def analyze_sentiment_text(text):
     analysis = TextBlob(text)
@@ -151,13 +158,19 @@ def search_twitter(request):
     query = request.GET.get('q', '')
     page = int(request.GET.get('page', 1))
     page_size = int(request.GET.get('page_size', 10))
+    filters = request.GET.get('filters', {})
     
     if not query:
         return Response({"error": "Search query is required"}, status=status.HTTP_400_BAD_REQUEST)
     
     try:
-        # Use Twitter API v2
-        tweets = twitter_client.search_recent_tweets(
+        # Check cache first
+        cached_results = get_cached_tweets(query, page, filters)
+        if cached_results:
+            return Response(cached_results)
+        
+        # Fetch from Twitter API
+        tweets = fetch_tweets_with_retry(
             query=query,
             max_results=page_size,
             pagination_token=None if page == 1 else request.GET.get('next_token')
@@ -165,22 +178,27 @@ def search_twitter(request):
         
         results = []
         for tweet in tweets.data:
-            # Analyze sentiment for each tweet
-            sentiment = analyze_sentiment_text(tweet.text)
-            results.append({
-                'text': tweet.text,
-                'created_at': tweet.created_at,
-                'id': tweet.id,
-                'sentiment': label_map[sentiment['label']],
-                'score': sentiment['score']
-            })
+            # Format tweet data
+            tweet_data = format_tweet_data(tweet)
             
-        return Response({
+            # Analyze sentiment
+            sentiment = analyze_sentiment_text(tweet.text)
+            tweet_data['sentiment'] = label_map[sentiment['label']]
+            tweet_data['sentiment_score'] = sentiment['score']
+            
+            results.append(tweet_data)
+        
+        response_data = {
             'results': results,
             'meta': tweets.meta,
             'page': page,
             'page_size': page_size
-        })
+        }
+        
+        # Cache the results
+        set_cached_tweets(query, page, response_data, filters)
+        
+        return Response(response_data)
         
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -191,6 +209,7 @@ def search_social_media(request):
     data = request.data
     platform = data.get('platform', 'twitter')
     query = data.get('query', '')
+    filters = data.get('filters', {})
 
     if not query:
         return Response({'error': 'Query is required'}, status=400)
@@ -199,21 +218,30 @@ def search_social_media(request):
 
     if platform == 'twitter':
         try:
-            tweets = twitter_client.search_recent_tweets(
+            # Check cache first
+            cached_results = get_cached_tweets(query, 1, filters)
+            if cached_results:
+                return Response(cached_results)
+            
+            # Fetch from Twitter API
+            tweets = fetch_tweets_with_retry(
                 query=query,
                 max_results=10
             )
             
             for tweet in tweets.data:
+                tweet_data = format_tweet_data(tweet)
+                
+                # Save to database
                 post_data = {
                     'platform': 'Twitter',
-                    'username': tweet.author_id,  # You might want to fetch user details separately
+                    'username': tweet.author_id,
                     'text': tweet.text,
                     'timestamp': tweet.created_at,
+                    'metadata': tweet_data
                 }
                 post_hash = generate_hash(post_data)
                 
-                # Save to database
                 AcquiredTweet.objects.create(
                     tweet_id=tweet.id,
                     username=tweet.author_id,
@@ -224,13 +252,22 @@ def search_social_media(request):
                     read_only=True
                 )
                 
-                results.append({
-                    'platform': 'Twitter',
-                    'username': tweet.author_id,
-                    'text': tweet.text,
-                    'timestamp': tweet.created_at,
-                    'sentiment': analyze_sentiment_text(tweet.text)
-                })
+                # Add sentiment analysis
+                sentiment = analyze_sentiment_text(tweet.text)
+                tweet_data['sentiment'] = label_map[sentiment['label']]
+                tweet_data['sentiment_score'] = sentiment['score']
+                
+                results.append(tweet_data)
+            
+            response_data = {
+                'results': results,
+                'meta': tweets.meta
+            }
+            
+            # Cache the results
+            set_cached_tweets(query, 1, response_data, filters)
+            
+            return Response(response_data)
                 
         except Exception as e:
             print("Error in search_social_media:", e)
