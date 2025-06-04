@@ -1,9 +1,6 @@
-from unittest import result
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-import torch
-from transformers import pipeline
 from rest_framework.generics import ListCreateAPIView
 from .models import Post, SocialMediaPost, AcquiredTweet
 from .serializers import SocialMediaPostSerializer, PostSerializer
@@ -25,15 +22,16 @@ from datetime import datetime
 from django.core.cache import cache
 import os
 import hashlib
+from textblob import TextBlob
 
-
-
-# Use the Twitter-specific model
-sentiment_analyzer = pipeline(
-    "sentiment-analysis",
-    model="cardiffnlp/twitter-roberta-base-sentiment-latest",
-    tokenizer="cardiffnlp/twitter-roberta-base-sentiment-latest"
-)
+def analyze_sentiment_text(text):
+    analysis = TextBlob(text)
+    # Convert polarity to single dictionary format instead of list
+    if analysis.sentiment.polarity > 0:
+        return {"label": "LABEL_2", "score": analysis.sentiment.polarity}
+    elif analysis.sentiment.polarity < 0:
+        return {"label": "LABEL_0", "score": abs(analysis.sentiment.polarity)}
+    return {"label": "LABEL_1", "score": 1.0}
 
 # Map model output to human-readable labels
 label_map = {
@@ -57,7 +55,7 @@ class AnalyzeTextView(View):
     def post(self, request, *args, **kwargs):
         text = request.POST.get("text", "")
         if text:
-            result = sentiment_analyzer(text)
+            result = analyze_sentiment_text(text)
             return JsonResponse(result, safe=False)
         return JsonResponse({"error": "No text provided"}, status=400)
 
@@ -89,7 +87,7 @@ def analyze_sentiment(request):
     if request.method == "POST":
         text = request.POST.get("text", "")
         if text:
-            result = sentiment_analyzer(text)
+            result = analyze_sentiment_text(text)
             return JsonResponse(result, safe=False)
         return JsonResponse({"error": "No text provided"}, status=400)
     return JsonResponse({"error": "Invalid request"}, status=400)
@@ -168,7 +166,7 @@ def search_twitter(request):
         results = []
         for tweet in tweets.data:
             # Analyze sentiment for each tweet
-            sentiment = sentiment_analyzer(tweet.text)[0]
+            sentiment = analyze_sentiment_text(tweet.text)
             results.append({
                 'text': tweet.text,
                 'created_at': tweet.created_at,
@@ -231,7 +229,7 @@ def search_social_media(request):
                     'username': tweet.author_id,
                     'text': tweet.text,
                     'timestamp': tweet.created_at,
-                    'sentiment': sentiment_analyzer(tweet.text)[0]
+                    'sentiment': analyze_sentiment_text(tweet.text)
                 })
                 
         except Exception as e:
@@ -308,7 +306,7 @@ def search_tweets(request):
         
         results = []
         for tweet in tweets.data:
-            sentiment = sentiment_analyzer(tweet.text)[0]
+            sentiment = analyze_sentiment_text(tweet.text)
             results.append({
                 'id': tweet.id,
                 'text': tweet.text,
