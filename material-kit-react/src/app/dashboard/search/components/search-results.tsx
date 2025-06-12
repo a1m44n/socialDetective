@@ -1,79 +1,77 @@
-import { Box, Card, CardContent, Typography, Chip, Stack } from '@mui/material';
-import { SentimentVerySatisfied, SentimentVeryDissatisfied, Tag } from '@mui/icons-material';
+'use client';
+
+import React from 'react';
+import {
+  Box,
+  Card,
+  CardContent,
+  Typography,
+  Chip
+} from '@mui/material';
 
 interface SearchResult {
-  id: string;
   platform: string;
   username: string;
-  content: string;
+  text: string;
   timestamp: string;
-  sentiment: {
-    score: number;
+  sentiment?: {
     label: string;
+    score?: number;
   };
-  entities: Array<{
-    text: string;
-    type: string;
-  }>;
 }
 
 interface SearchResultsProps {
   results: SearchResult[];
 }
 
-export function SearchResults({ results }: SearchResultsProps) {
+export default function SearchResults({ results }: SearchResultsProps): React.ReactElement | null {
+  if (!results.length) {
+    return null;
+  }
+
   return (
-    <Stack spacing={2}>
+    <Box sx={{ mt: 3 }}>
+      <Typography variant="h6" gutterBottom>
+        Search Results
+      </Typography>
       {results.map((result) => (
-        <Card key={result.id}>
+        <Card key={`${result.platform}-${result.username}-${result.timestamp}`} sx={{ mb: 2 }}>
           <CardContent>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-              <Typography variant="subtitle1" color="text.secondary">
-                {result.platform} • {result.username}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {new Date(result.timestamp).toLocaleString()}
-              </Typography>
-            </Box>
-
-            <Typography paragraph>
-              {result.content}
+            <Typography variant="subtitle2" color="text.secondary">
+              {result.platform} • {result.username}
             </Typography>
-
-            <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-              {result.sentiment.score > 0 ? (
-                <Chip
-                  icon={<SentimentVerySatisfied />}
-                  label={`Positive (${result.sentiment.score.toFixed(2)})`}
-                  color="success"
-                  size="small"
-                />
-              ) : (
-                <Chip
-                  icon={<SentimentVeryDissatisfied />}
-                  label={`Negative (${result.sentiment.score.toFixed(2)})`}
-                  color="error"
-                  size="small"
-                />
-              )}
+            <Typography variant="body1">{result.text}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {result.timestamp}
+            </Typography>
+            <Box sx={{ mt: 1 }}>
+              <Chip
+                icon={
+                  result.sentiment?.label?.toLowerCase() === 'positive'
+                    ? <span role="img" aria-label="positive">😊</span>
+                    : result.sentiment?.label?.toLowerCase() === 'negative'
+                    ? <span role="img" aria-label="negative">😞</span>
+                    : <span role="img" aria-label="neutral">😐</span>
+                }
+                label={
+                  result.sentiment?.label
+                    ? `Sentiment: ${result.sentiment.label} (${result.sentiment.score ? (result.sentiment.score * 100).toFixed(1) : 'N/A'}%)`
+                    : 'Sentiment: N/A'
+                }
+                color={
+                  result.sentiment?.label?.toLowerCase() === 'positive'
+                    ? 'success'
+                    : result.sentiment?.label?.toLowerCase() === 'negative'
+                    ? 'error'
+                    : 'default'
+                }
+                variant="outlined"
+                size="small"
+              />
             </Box>
-
-            {result.entities.length > 0 && (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {result.entities.map((entity, index) => (
-                  <Chip
-                    key={index}
-                    icon={<Tag />}
-                    label={`${entity.text} (${entity.type})`}
-                    size="small"
-                    variant="outlined"
-                  />
-                ))}
-              </Box>
-            )}
           </CardContent>
         </Card>
       ))}
-    </Stack>
+    </Box>
   );
 } 

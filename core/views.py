@@ -30,6 +30,9 @@ from .twitter_utils import (
     format_tweet_data,
     rate_limit
 )
+import logging
+
+logger = logging.getLogger(__name__)
 
 def analyze_sentiment_text(text):
     analysis = TextBlob(text)
@@ -114,20 +117,30 @@ def normalize_text(request):
 def login_view(request):
     if request.method == 'POST':
         try:
+            logger.info("Received login request")
             data = json.loads(request.body)
             email = data.get('email')
             password = data.get('password')
             role = data.get('role')
+            
+            logger.info(f"Login attempt for email: {email}, role: {role}")
 
-            user = authenticate(request, username=email, password=password)
-
+            user = authenticate(request, email=email, password=password)
+            
             if user is not None:
+                logger.info(f"Login successful for user: {email}")
                 return JsonResponse({'message': 'Login successful', 'role': role})
             else:
+                logger.warning(f"Invalid credentials for email: {email}")
                 return JsonResponse({'message': 'Invalid credentials'}, status=401)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {str(e)}")
+            return JsonResponse({'message': 'Invalid JSON format'}, status=400)
         except Exception as e:
+            logger.error(f"Server error during login: {str(e)}")
             return JsonResponse({'message': 'Server error', 'error': str(e)}, status=500)
     else:
+        logger.warning(f"Invalid method: {request.method}")
         return JsonResponse({'message': 'Method not allowed'}, status=405)
 
 # Initialize Twitter API client only if credentials are available

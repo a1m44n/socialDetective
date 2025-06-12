@@ -30,6 +30,7 @@ export interface SignInWithOAuthParams {
 export interface SignInWithPasswordParams {
   email: string;
   password: string;
+  role: string;
 }
 
 export interface ResetPasswordParams {
@@ -37,6 +38,8 @@ export interface ResetPasswordParams {
 }
 
 class AuthClient {
+  private baseUrl = 'http://localhost:8000/api/auth';
+
   async signUp(_: SignUpParams): Promise<{ error?: string }> {
     // Make API request
 
@@ -52,19 +55,38 @@ class AuthClient {
   }
 
   async signInWithPassword(params: SignInWithPasswordParams): Promise<{ error?: string }> {
-    const { email, password } = params;
+    try {
+      console.log('Attempting login with params:', { ...params, password: '***' });
+      console.log('Making request to:', `${this.baseUrl}/login/`);
 
-    // Make API request
+      const response = await fetch(`${this.baseUrl}/login/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(params),
+      });
 
-    // We do not handle the API, so we'll check if the credentials match with the hardcoded ones.
-    if (email !== 'sofia@devias.io' || password !== 'Secret1') {
-      return { error: 'Invalid credentials' };
+      console.log('Response status:', response.status);
+      const data = await response.json();
+      console.log('Response data:', data);
+
+      if (!response.ok) {
+        console.error('Login failed:', data.error || 'Invalid credentials');
+        return { error: data.error || 'Invalid credentials' };
+      }
+
+      // Store the token
+      if (data.token) {
+        console.log('Login successful, storing token');
+        localStorage.setItem('auth-token', data.token);
+      }
+
+      return {};
+    } catch (error) {
+      console.error('Login error:', error);
+      return { error: 'Failed to connect to server' };
     }
-
-    const token = generateToken();
-    localStorage.setItem('custom-auth-token', token);
-
-    return {};
   }
 
   async resetPassword(_: ResetPasswordParams): Promise<{ error?: string }> {
@@ -76,21 +98,33 @@ class AuthClient {
   }
 
   async getUser(): Promise<{ data?: User | null; error?: string }> {
-    // Make API request
+    try {
+      const token = localStorage.getItem('auth-token');
+      if (!token) {
+        return { data: null };
+      }
 
-    // We do not handle the API, so just check if we have a token in localStorage.
-    const token = localStorage.getItem('custom-auth-token');
+      const response = await fetch(`${this.baseUrl}/validate/`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
 
-    if (!token) {
+      if (!response.ok) {
+        localStorage.removeItem('auth-token');
+        return { data: null };
+      }
+
+      const data = await response.json();
+      return { data: data.user };
+    } catch (error) {
+      console.error('Get user error:', error);
       return { data: null };
     }
-
-    return { data: user };
   }
 
   async signOut(): Promise<{ error?: string }> {
-    localStorage.removeItem('custom-auth-token');
-
+    localStorage.removeItem('auth-token');
     return {};
   }
 }

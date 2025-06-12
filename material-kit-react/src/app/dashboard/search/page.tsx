@@ -1,18 +1,32 @@
-import { useState } from 'react';
+'use client';
+
+import React, { useState } from 'react';
+import type { FormEvent } from 'react';
 import {
   Box, Card, CardContent, TextField, Button, Typography, Grid, CircularProgress, Alert, MenuItem
 } from '@mui/material';
 import { Search as SearchIcon } from '@mui/icons-material';
 import Chip from '@mui/material/Chip';
 
-export default function SearchPage() {
+interface SearchResult {
+  platform: string;
+  username: string;
+  text: string;
+  timestamp: string;
+  sentiment?: {
+    label: string;
+    score?: number;
+  };
+}
+
+export default function SearchPage(): React.ReactElement {
   const [query, setQuery] = useState('');
   const [platform, setPlatform] = useState('twitter');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<SearchResult[]>([]);
 
-  const handleSearch = async (e: React.FormEvent) => {
+  const handleSearch = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
     if (!query.trim()) return;
 
@@ -30,7 +44,7 @@ export default function SearchPage() {
       });
 
       if (!response.ok) throw new Error('Search failed');
-      const data = await response.json();
+      const data = await response.json() as { results: SearchResult[] };
       setResults(data.results);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -53,7 +67,7 @@ export default function SearchPage() {
                   fullWidth
                   label="Keyword, Username, or Hashtag"
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  onChange={(e) => { setQuery(e.target.value); }}
                   disabled={loading}
                 />
               </Grid>
@@ -63,7 +77,7 @@ export default function SearchPage() {
                   fullWidth
                   label="Platform"
                   value={platform}
-                  onChange={(e) => setPlatform(e.target.value)}
+                  onChange={(e) => { setPlatform(e.target.value); }}
                   disabled={loading}
                 >
                   <MenuItem value="twitter">Twitter</MenuItem>
@@ -89,8 +103,8 @@ export default function SearchPage() {
               <Typography variant="h6" gutterBottom>
                 Search Results
               </Typography>
-              {results.map((result, idx) => (
-                <Card key={idx} sx={{ mb: 2 }}>
+              {results.map((result) => (
+                <Card key={`${result.platform}-${result.username}-${result.timestamp}`} sx={{ mb: 2 }}>
                   <CardContent>
                     <Typography variant="subtitle2" color="text.secondary">
                       {result.platform} • {result.username}
