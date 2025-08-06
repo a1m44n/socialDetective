@@ -11,4 +11,4 @@ export const config: Config = {
   logLevel: (process.env.NEXT_PUBLIC_LOG_LEVEL as keyof typeof LogLevel) ?? LogLevel.ALL,
 };
 
-export const API_BASE_URL: string = process.env.REACT_APP_API_URL ?? 'http://localhost:8000';
+export const API_BASE_URL: string = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';

@@ -38,7 +38,7 @@ export interface ResetPasswordParams {
 }
 
 class AuthClient {
-  private baseUrl = 'http://localhost:8000/api/auth';
+  private baseUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/auth`;
 
   async signUp(_: SignUpParams): Promise<{ error?: string }> {
     // Make API request
