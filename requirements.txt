@@ -34,5 +34,5 @@ numpy==1.26.4
 pandas==2.0.3
 nltk==3.8.1
 textblob==0.17.1
-torch==2.0.1+cpu
+torch==2.1.0+cpu
 --find-links https://download.pytorch.org/whl/torch_stable.html
