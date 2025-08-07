@@ -30,3 +30,4 @@ gunicorn==22.0.0
 whitenoise==6.6.0
 django-redis==5.4.0
 # Core packages only - ML packages added later
+textblob==0.17.1
